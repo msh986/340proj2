@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
   MinetHandle mux, sock;
 
   MinetInit(MINET_TCP_MODULE);
-
+  ConnectionList<TCPState> clist;
   mux=MinetIsModuleInConfig(MINET_IP_MUX) ? MinetConnect(MINET_IP_MUX) : MINET_NOHANDLE;
   sock=MinetIsModuleInConfig(MINET_SOCK_MODULE) ? MinetAccept(MINET_SOCK_MODULE) : MINET_NOHANDLE;
 
@@ -55,15 +55,80 @@ int main(int argc, char *argv[])
       if (event.handle==mux) {
 	Packet p;
 	MinetReceive(mux,p);
+  unsigned short len;
+  bool checksumok;
 	unsigned tcphlen=TCPHeader::EstimateTCPHeaderLength(p);
 	cerr << "estimated header len="<<tcphlen<<"\n";
 	p.ExtractHeaderFromPayload<TCPHeader>(tcphlen);
-	IPHeader ipl=p.FindHeader(Headers::IPHeader);
+	IPHeader iph=p.FindHeader(Headers::IPHeader);
+  IPHeader iphOut=iph;
 	TCPHeader tcph=p.FindHeader(Headers::TCPHeader);
+  TCPHeader tchphOut=tcph;
+  checksumok=tcph.IsCorrectChecksum(p);
+  Connection c;
+  iph.GetDestIP(c.src);
+  iph.GetSourceIP(c.dest);
+  iphOut.SetDestIP(c.dest);
+  iphOut.SetSourceIP(c.src);
+  iph.GetProtocol(c.protocol);
+  tcph.GetDestPort(c.srcport);
+  tcph.GetSourcePort(c.destport);
+  tcphOut.SetSourcePort(c.srcport);
+  tcphOut.SetDestPort(c.destport);
+  ConnectionList<TCPState>::iterator cs = clist.FindMatching(c);
+  if (cs!=clist.end()) {
+    switch((*cs).state)
+    {
+      case ESTABLISHED:
+      //Go-Back-N and start of Teardown
+      tcph.GetLength(len);
+      len-=tcphlen;
+    Buffer &data = p.GetPayload().ExtractFront(len);
+    SockRequestResponse write(WRITE,
+            (*cs).connection,
+            data,
+            len,
+            EOK);
+    break;
+    case LISTEN:
+    //send synack if pkt=syn 
+    case SYN_RCVD:
+    //Wait for ack or timeout
+    //Not sending anything
+    case SYN_SENT:
+    //Wait for synack or timeout
+    //send ACK
+    case FIN_WAIT1:
+    //rcv: fin, ack, finack
+    //send ack, nothing, ack
+    //goto CLOSING, WAIT_2, TIME_WAIT
+    case FIN_WAIT2:
+    //RCV: FIN
+    //SEND: ACK
+    //GOTO: TIME WAIT
+    case CLOSING:
+    //RCV:ACK
+    //SEND: Nothing
+    //GOTO: TIME WAIT
+    case TIME_WAIT:
+    //WAIT 2 RTT, ERASE
+    case LAST_ACK:
+    //RCV: ACK
+    //SEND: NOTHING
+    //ERASE.
+    default:
+    //Freak out. Shouldn't occur.
+    cerr<<"Mysterious state error";
 
-	cerr << "TCP Packet: IP Header is "<<ipl<<" and ";
+    }
+
+
+  }
+  else{
+    cerr<<"UNKNOWN PORT";
+  }
+	cerr << "TCP Packet: IP Header is "<<iph<<" and ";
 	cerr << "TCP Header is "<<tcph << " and ";
-
 	cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
 	
       }
