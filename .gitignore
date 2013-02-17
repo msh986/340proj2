@@ -2,3 +2,4 @@ bin/device_driver2
 bin/reader
 bin/writer
 *.swp
+minet.cfg
