@@ -54,8 +54,10 @@ int main(int argc, char *argv[])
       //  Data from the IP layer below  //
       if (event.handle==mux) {
 	Packet p;
+  Packet pOut;
 	MinetReceive(mux,p);
   unsigned short len;
+  unsigned char flags;
   bool checksumok;
 	unsigned tcphlen=TCPHeader::EstimateTCPHeaderLength(p);
 	cerr << "estimated header len="<<tcphlen<<"\n";
@@ -63,21 +65,22 @@ int main(int argc, char *argv[])
 	IPHeader iph=p.FindHeader(Headers::IPHeader);
   IPHeader iphOut=iph;
 	TCPHeader tcph=p.FindHeader(Headers::TCPHeader);
+  tcph.GetFlags(flags);
   TCPHeader tchphOut=tcph;
   checksumok=tcph.IsCorrectChecksum(p);
   Connection c;
   iph.GetDestIP(c.src);
+  iph.GetProtocol(c.protocol);
+  tcph.GetDestPort(c.srcport);
   iph.GetSourceIP(c.dest);
   iphOut.SetDestIP(c.dest);
   iphOut.SetSourceIP(c.src);
-  iph.GetProtocol(c.protocol);
-  tcph.GetDestPort(c.srcport);
   tcph.GetSourcePort(c.destport);
   tcphOut.SetSourcePort(c.srcport);
   tcphOut.SetDestPort(c.destport);
   ConnectionList<TCPState>::iterator cs = clist.FindMatching(c);
   if (cs!=clist.end()) {
-    switch((*cs).state)
+    switch((*cs).state.stateOfcnx)
     {
       case ESTABLISHED:
       //Go-Back-N and start of Teardown
@@ -91,7 +94,16 @@ int main(int argc, char *argv[])
             EOK);
     break;
     case LISTEN:
-    //send synack if pkt=syn 
+    //passive open
+    //send synack if pkt=syn
+    if(IS_SYN(flags))
+    {
+    //modify cs for our new connection
+
+    //build a no-body packet w/ ip and tcp headers for synack
+    //start timeout
+
+    }
     case SYN_RCVD:
     //Wait for ack or timeout
     //Not sending anything
