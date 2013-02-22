@@ -137,6 +137,24 @@ int main(int argc, char *argv[])
 	SockRequestResponse s;
 	MinetReceive(sock,s);
 	cerr << "Received Socket Request:" << s << endl;
+	
+	switch(s.type){
+	case CONNECT:
+	//active open
+	case ACCEPT:
+	//passive open - will not have dest addr
+	case STATUS:
+	//status update (in response to a write to socket)
+	case WRITE:
+	//send data (for conection after successful ACCEPT or CONNECT)
+	case FORWARD:
+	//ignore, send zero error STATUS
+	case CLOSE:
+	//close connection
+	default:	
+	}
+	
+	
       }
     }
   }
