@@ -99,6 +99,8 @@ int main(int argc, char *argv[])
     {
     //modify cs for our new connection
       (*cs).state.SetState(SYN_RCVD);
+      (*cs).connection.dest = c.dest;
+      (*cs).connection.destport = c.destport;
       p.GetSeqNum(n);
       tcph.getWinSize(w);
       (*cs).state.SetLastRcvd(n);
