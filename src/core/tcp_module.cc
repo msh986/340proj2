@@ -54,10 +54,11 @@ int main(int argc, char *argv[])
       //  Data from the IP layer below  //
       if (event.handle==mux) {
 	Packet p;
-  Packet pOut;
 	MinetReceive(mux,p);
   unsigned short len;
   unsigned char flags;
+  unsigned int n;
+  unsigned short w;
   bool checksumok;
 	unsigned tcphlen=TCPHeader::EstimateTCPHeaderLength(p);
 	cerr << "estimated header len="<<tcphlen<<"\n";
@@ -76,8 +77,6 @@ int main(int argc, char *argv[])
   iphOut.SetDestIP(c.dest);
   iphOut.SetSourceIP(c.src);
   tcph.GetSourcePort(c.destport);
-  tcphOut.SetSourcePort(c.srcport);
-  tcphOut.SetDestPort(c.destport);
   ConnectionList<TCPState>::iterator cs = clist.FindMatching(c);
   if (cs!=clist.end()) {
     switch((*cs).state.stateOfcnx)
@@ -99,10 +98,22 @@ int main(int argc, char *argv[])
     if(IS_SYN(flags))
     {
     //modify cs for our new connection
-
-    //build a no-body packet w/ ip and tcp headers for synack
+      (*cs).state.SetState(SYN_RCVD);
+      p.GetSeqNum(n);
+      tcph.getWinSize(w);
+      (*cs).state.SetLastRcvd(n);
+      (*cs).state.SetRwnd(w);
+      p.SetHeader(iphOut);
+      tcph.SetSeqNum((*cs).state.last_acked);
+      tcph.SetAckNum(n+1);
+      tcph.SetWinSize((*cs).state.GetN());
+      tcph.SetSourcePort(c.srcport, p);
+      tcph.SetDestPort(c.destport,p);
+      SET_ACK(flags);
+      tcph.SetFlags(flags,p);
+      p.SetHeader(tcph);
     //start timeout
-
+      MinetSend(mux,p);
     }
     case SYN_RCVD:
     //Wait for ack or timeout
