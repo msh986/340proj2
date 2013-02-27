@@ -24,7 +24,7 @@ using std::string;
 int main(int argc, char *argv[])
 {
   MinetHandle mux, sock;
-
+  Time timeoutVal=-1;
   MinetInit(MINET_TCP_MODULE);
   ConnectionList<TCPState> clist;
   mux=MinetIsModuleInConfig(MINET_IP_MUX) ? MinetConnect(MINET_IP_MUX) : MINET_NOHANDLE;
@@ -44,7 +44,7 @@ int main(int argc, char *argv[])
 
   MinetEvent event;
 
-  while (MinetGetNextEvent(event)==0) 
+  while (MinetGetNextEvent(event,timeoutVal)==0) 
   {
     // if we received an unexpected type of event, print error
     if (event.eventtype!=MinetEvent::Dataflow || event.direction!=MinetEvent::IN) {
@@ -344,6 +344,18 @@ int main(int argc, char *argv[])
 	
 	
       }
+    }
+  }
+  if(event.handle==timeout)
+  {
+    cerr<<"timout here!";
+    if((clist).FindEarliest()==clist.end)
+    {
+      timeoutVal=0;
+    }
+    else
+    {
+      timeoutVal=clist.FindEarliest().timeout;
     }
   }
   return 0;
