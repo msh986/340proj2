@@ -59,17 +59,24 @@ int main(int argc, char *argv[])
 	MinetReceive(mux,p);
   unsigned short len;
   unsigned char flags;
+  unsigned char iplen;
+  unsigned char tcplen;
   unsigned int n;
   unsigned short w;
   unsigned int ackn;
   bool checksumok;
 	unsigned tcphlen=TCPHeader::EstimateTCPHeaderLength(p);
+  iph.GetTotalLength(len);
+  iph.GetHeaderLength(iplen);
 	cerr << "estimated header len="<<tcphlen<<"\n";
 	p.ExtractHeaderFromPayload<TCPHeader>(tcphlen);
 	IPHeader iph=p.FindHeader(Headers::IPHeader);
   IPHeader iphOut=iph;
 	TCPHeader tcph=p.FindHeader(Headers::TCPHeader);
   tcph.GetFlags(flags);
+  tcph.GetHeaderLength(tcplen);
+  len-=(tcplen*4+iplen*4);
+  Buffer &data=p.GetPayload().ExtractFront(len);
   TCPHeader tchphOut=tcph;
   checksumok=tcph.IsCorrectChecksum(p);
   Connection c;
@@ -86,10 +93,11 @@ int main(int argc, char *argv[])
     switch((*cs).state.stateOfcnx)
     {
       case ESTABLISHED:
-      //Go-Back-N and start of Teardown
-      if(IS_FIN(flags)){
-      (*cs).state.SetState(CLOSE_WAIT);
       tcph.GetSeqNum(n);
+      bool validSeq=(*cs).state.SetLastRcvd(n,len);
+      if(validSeq){
+        if(IS_FIN(flags)){
+      (*cs).state.SetState(CLOSE_WAIT);
       tcph.GetAckNum(ackn);
       (*cs).state.SetLastAcked(ackn);
       tcph.GetWinSize(w);
@@ -110,8 +118,23 @@ int main(int argc, char *argv[])
       }
       else if(IS_ACK(flags))
       {
-
+        //sender side
+        //(*cs).state.RecvBuffer.AddBack(data);
+      SockRequestResponse write(WRITE,
+            (*cs).connection,
+            data,
+            len,
+            EOK);
+      MinetSend(sock,write);
       }
+      else
+      {
+        //rcvr side
+      }
+    }
+    else{
+      p.SetHeader(iphOut);
+    }
     break;
     case LISTEN:
     //passive open
@@ -142,13 +165,20 @@ int main(int argc, char *argv[])
     break;
     case SYN_RCVD:
     if(IS_ACK(flags))
-    { tcph.GetAckNum(ackn);
+    {//valid segment? move to est
+      tcph.GetAckNum(ackn);
       tcph.GetSeqNum(n);
       (*cs).state.SetState(ESTABLISHED);
       tcph.GetWinSize(w);
       (*cs).state.SetLastRcvd(n);
       (*cs).state.SetSendRwnd(w);
       (*cs).state.SetLastAcked(ackn);
+      SockRequestResponse write;
+      write.type=WRITE;
+      write.connection=(*cs).connection;
+      write.error=EOK;
+      write.bytes=0;
+      MinetSend(sock,write);
     //start timeout
     }
     break;
@@ -158,16 +188,17 @@ int main(int argc, char *argv[])
     //Wait for synack or timeout
     //send ACK
     if(IS_ACK(flags)&&IS_SYN(flags))
-    {
-     (*cs).state.SetState(ESTABLISHED);
-      tcph.GetSeqNum(n);
+    { tcph.GetSeqNum(n);
       tcph.GetAckNum(ackn);
+      if(ackn==(*cs).state.GetLastSent()){
+     (*cs).state.SetState(ESTABLISHED);
       (*cs).state.SetLastAcked(ackn);
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
       p.SetHeader(iphOut);
       tcph.SetSeqNum((*cs).state.last_acked+1,p);
       (*cs).state.SetLastSent((*cs).state.last_acked+1);
+      (*cs).state.SetLastRcvd(n);
       tcph.SetAckNum(n+1,p);
       tcph.SetWinSize((*cs).state.GetRwnd(),p);
       tcph.SetSourcePort(c.srcport, p);
@@ -177,7 +208,7 @@ int main(int argc, char *argv[])
       p.SetHeader(tcph);
     //start timeout
       MinetSend(mux,p);
-    }
+    }}
     break;
     case FIN_WAIT1:
     if(IS_FIN(flags)&&IS_ACK(flags))
