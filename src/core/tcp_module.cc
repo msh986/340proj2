@@ -310,25 +310,158 @@ int main(int argc, char *argv[])
 	SockRequestResponse s;
 	MinetReceive(sock,s);
 	cerr << "Received Socket Request:" << s << endl;
-	
+	SockRequestResponse repl;
+	ConnectionList<TCPState>::iterator cs;
 	switch(s.type)
-  {
-	case CONNECT:
-	//active open
-	case ACCEPT:
-	//passive open - will not have dest addr
-	case STATUS:
-	//status update (in response to a write to socket)
-	case WRITE:
-	//send data (for conection after successful ACCEPT or CONNECT)
+  	{
 	case FORWARD:
-	//ignore, send zero error STATUS
+		repl.type = STATUS;
+        	repl.error = ENOT_SUPPORTED;
+        	repl.bytes = 0;
+        	MinetSend(sock, repl );
+		break;
+	case CONNECT:
+	cs = clist.FindMatching(c);
+	if(cs!=clist.end())
+	{
+	  //if there's a matching connection
+	  if((*cs).state.stateOfcnx==CLOSED)
+	  {
+	  //closed 
+	    (*cs).state.SetState(SYN_SENT);
+	    //send SYN
+	    //
+	    //send EOK
+	    //
+	    repl.type = STATUS;
+            repl.error = EOK;
+            repl.connection = s.connection;
+            MinetSend( sock, repl );
+
+	  }else if((*cs).state==LISTEN){
+  	  //passively open
+  	    (*cs).state.connection = c;
+	    (*cs).state.SetState(SYN_SENT);
+	    //send SYN
+	    //
+	    //send EOK
+	    repl.type = STATUS;
+            repl.error = EOK;
+            repl.connection = s.connection;
+            MinetSend( sock, repl );
+
+	  }
+	  else{
+	  //already exists - send error to socket
+	    cerr << "already open" << std::endl;
+	    //send error to socket
+	    repl.connection = c;
+	    repl.type = STATUS;
+	    repl.error = ECONN_FAILED;
+	    MinetSend(sock,repl);
+	  }
+	}else{
+	  //doesn't exist
+	  TCPState active(1111, SYN_SENT, 0);
+	  //send SYN (and start timeout)
+          //Create and save mapping
+          ConnectionToStateMapping<TCPState> newactive(s.connection, Time(), active, false);
+          clist.push_back(newactive);
+	  //send EOK
+	  repl.type = STATUS;
+          repl.error = EOK;
+          repl.connection = s.connection;
+          MinetSend( sock, repl );
+	}
+	break;
+	case ACCEPT:
+	  TCPState listen(0, LISTEN, 0);
+	  ConnectionToStateMapping<TCPState> newlisten(s.connection, Time(), listen, false);
+          clist.push_back(newlisten);
+	  //send OK status
+	  repl.type = STATUS;
+          repl.error = EOK;
+          MinetSend( sock, repl );
+	  break;
+	case STATUS:
+	  cs = clist.FindMatching(c);
+	  if((*cs)!=clist.end()){
+		//status update (in response to a write to socket)
+		//clear front of buffer (# bytes contained in response)
+		(*cs).state.RecvBuffer.Erase(0,s.bytes);
+	  }else{
+		cerr << "unknown connection" << s << std:endl;
+	  }
+	  break;
+	case WRITE:
+	  //send data (for conection after successful ACCEPT or CONNECT)
+	  cs = clist.FindMatching(c);
+	  if(cs!=clist.end())
+ 	  {
+	    //if in ESTABLISHED, add to send buffer
+	    //
+	    //reply with how many bytes written
+	    repl.type = STATUS;
+	    repl.error = EOK;
+	    repl.bytes = numbytes;
+	    MinetSend(sock,repl);
+	  }else{
+	    //no such connection, error
+	    repl.type = STATUS;
+	    repl.error = ENOMATCH;
+	    MinetSend(sock,repl);
+	  }
+	  break;
 	case CLOSE:
 	//close connection
-	default:	
+	  cs = clist.FindMatching(c);
+	  if(cs!=clist.end())
+  	  {
+	    if((*cs).state.stateOfcnx==ESTABLISHED||(*cs).state.stateOfcnx==SYN_RCVD){
+		//if in ESTABLISHED or SYN_RCVD, move to FIN_WAIT_1
+		(*cs).state.SetState(FIN_WAIT_1);
+		//send FIN
+		//
+		//send OK
+		repl.type = STATUS;
+	    	repl.error = EOK;
+	    	MinetSend(sock,repl);
+	    }else if((*cs).state.stateOfcnx==CLOSE_WAIT){
+	    	//if in close_wait, go to LAST_ACK
+	    	(*cs).state.SetState(FIN_WAIT_1);
+	    	//send FIN
+	    	//
+	    	//send OK
+	    	repl.type = STATUS;
+	    	repl.error = EOK;
+	    	MinetSend(sock,repl);
+	    }else if((*cs).state.stateOfcnx==CLOSE_WAIT){
+	      //SYN_SENT... 
+	      //
+	      //send FIN
+	    
+	      //go to somewhere?
+	        repl.type = STATUS;
+	    	repl.error = EOK;
+	    	MinetSend(sock,repl);
+	    }else{
+	    //else... shouldn't be here.
+	        repl.type = STATUS;
+	        repl.error = ENOMATCH;
+	        MinetSend(sock,repl);
+	    }
+	  }else{
+	    //no such connection, error
+	    repl.type = STATUS;
+	    repl.error = ENOMATCH;
+	    MinetSend(sock,repl);
+	  }
+	  break;
+	default:
+	//shouldn't be here
+	cerr << "unknown socket request unhandled" << s << std::endl;	
 	}
-	
-	
+	}
       }
     }
   }
