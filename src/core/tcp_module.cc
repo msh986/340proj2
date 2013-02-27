@@ -337,7 +337,6 @@ int main(int argc, char *argv[])
             repl.error = EOK;
             repl.connection = s.connection;
             MinetSend( sock, repl );
-
 	  }else if((*cs).state==LISTEN){
   	  //passively open
   	    (*cs).state.connection = c;
@@ -349,7 +348,6 @@ int main(int argc, char *argv[])
             repl.error = EOK;
             repl.connection = s.connection;
             MinetSend( sock, repl );
-
 	  }
 	  else{
 	  //already exists - send error to socket
@@ -398,8 +396,8 @@ int main(int argc, char *argv[])
 	  cs = clist.FindMatching(c);
 	  if(cs!=clist.end())
  	  {
-	    //if in ESTABLISHED, add to send buffer
-	    //
+	    //if in ESTABLISHED, add to send buffer if there is space
+	    // if there are available packets in the window, create them and send them
 	    //reply with how many bytes written
 	    repl.type = STATUS;
 	    repl.error = EOK;
