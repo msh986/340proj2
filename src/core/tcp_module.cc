@@ -14,7 +14,7 @@
 #include <iostream>
 
 #include "Minet.h"
-
+#include "tcpstate.h"
 
 using std::cout;
 using std::endl;
@@ -61,20 +61,23 @@ int main(int argc, char *argv[])
   unsigned char flags;
   unsigned char iplen;
   unsigned char tcplen;
+  unsigned short totlen;
   unsigned int n;
   unsigned short w;
   unsigned int ackn;
   bool checksumok;
+  bool validSeq;
 	unsigned tcphlen=TCPHeader::EstimateTCPHeaderLength(p);
+  IPHeader iph=p.FindHeader(Headers::IPHeader);
+  IPHeader iphOut=iph;
   iph.GetTotalLength(len);
   iph.GetHeaderLength(iplen);
 	cerr << "estimated header len="<<tcphlen<<"\n";
 	p.ExtractHeaderFromPayload<TCPHeader>(tcphlen);
-	IPHeader iph=p.FindHeader(Headers::IPHeader);
-  IPHeader iphOut=iph;
 	TCPHeader tcph=p.FindHeader(Headers::TCPHeader);
   tcph.GetFlags(flags);
-  tcph.GetHeaderLength(tcplen);
+  tcph.GetHeaderLen(tcplen);
+  totlen=len;
   len-=(tcplen*4+iplen*4);
   Buffer &data=p.GetPayload().ExtractFront(len);
   TCPHeader tchphOut=tcph;
@@ -86,6 +89,7 @@ int main(int argc, char *argv[])
   iph.GetSourceIP(c.dest);
   iphOut.SetDestIP(c.dest);
   iphOut.SetSourceIP(c.src);
+  iphOut.SetTotalLength(tcphlen+iplen);
   tcph.GetSourcePort(c.destport);
   ConnectionList<TCPState>::iterator cs = clist.FindMatching(c);
   if (cs!=clist.end()) 
@@ -94,7 +98,7 @@ int main(int argc, char *argv[])
     {
       case ESTABLISHED:
       tcph.GetSeqNum(n);
-      bool validSeq=(*cs).state.SetLastRcvd(n,len);
+      validSeq=(*cs).state.SetLastRecvd(n,totlen);
       if(validSeq){
         if(IS_FIN(flags)){
       (*cs).state.SetState(CLOSE_WAIT);
@@ -103,9 +107,9 @@ int main(int argc, char *argv[])
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
       p.SetHeader(iphOut);
-      tcph.SetSeqNum((*cs).state.last_sent+1,p);
-      (*cs).state.SetLastSent((*cs).state.last_sent+1);
-      tcph.SetAckNum(n+1,p);
+      tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
+      tcph.SetAckNum((*cs).state.GetLastRecvd()+1,p);
       tcph.SetWinSize((*cs).state.GetRwnd(),p);
       tcph.SetSourcePort(c.srcport, p);
       tcph.SetDestPort(c.destport,p);
@@ -119,7 +123,11 @@ int main(int argc, char *argv[])
       else if(IS_ACK(flags))
       {
         //sender side
-        //(*cs).state.RecvBuffer.AddBack(data);
+      tcph.GetAckNum(ackn);
+      tcph.GetWinSize(w);
+      (*cs).state.SetSendRwnd(w);
+      (*cs).state.SetLastAcked(ackn);
+      (*cs).state.RecvBuffer.AddBack(data);
       SockRequestResponse write(WRITE,
             (*cs).connection,
             data,
@@ -129,11 +137,17 @@ int main(int argc, char *argv[])
       }
       else
       {
-        //rcvr side
+      (*cs).state.RecvBuffer.AddBack(data);
+      SockRequestResponse write(WRITE,
+            (*cs).connection,
+            data,
+            len,
+            EOK);
+      MinetSend(sock,write);
       }
     }
     else{
-      p.SetHeader(iphOut);
+      //p.SetHeader(iphOut);
     }
     break;
     case LISTEN:
@@ -147,12 +161,12 @@ int main(int argc, char *argv[])
       (*cs).connection.destport = c.destport;
       tcph.GetSeqNum(n);
       tcph.GetWinSize(w);
-      (*cs).state.SetLastRcvd(n);
+      (*cs).state.SetLastRecvd(n);
       (*cs).state.SetSendRwnd(w);
       p.SetHeader(iphOut);
-      tcph.SetSeqNum((*cs).state.last_acked+1,p);
-      (*cs).state.SetLastSent((*cs).state.last_acked+1);
-      tcph.SetAckNum(n+1,p);
+      tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
+      tcph.SetAckNum((*cs).state.GetLastRecvd()+1,p);
       tcph.SetWinSize((*cs).state.GetRwnd(),p);
       tcph.SetSourcePort(c.srcport, p);
       tcph.SetDestPort(c.destport,p);
@@ -170,7 +184,7 @@ int main(int argc, char *argv[])
       tcph.GetSeqNum(n);
       (*cs).state.SetState(ESTABLISHED);
       tcph.GetWinSize(w);
-      (*cs).state.SetLastRcvd(n);
+      (*cs).state.SetLastRecvd(n);
       (*cs).state.SetSendRwnd(w);
       (*cs).state.SetLastAcked(ackn);
       SockRequestResponse write;
@@ -196,10 +210,10 @@ int main(int argc, char *argv[])
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
       p.SetHeader(iphOut);
-      tcph.SetSeqNum((*cs).state.last_acked+1,p);
-      (*cs).state.SetLastSent((*cs).state.last_acked+1);
-      (*cs).state.SetLastRcvd(n);
-      tcph.SetAckNum(n+1,p);
+      tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
+      (*cs).state.SetLastRecvd(n);
+      tcph.SetAckNum((*cs).state.GetLastRecvd(),p);
       tcph.SetWinSize((*cs).state.GetRwnd(),p);
       tcph.SetSourcePort(c.srcport, p);
       tcph.SetDestPort(c.destport,p);
@@ -220,9 +234,9 @@ int main(int argc, char *argv[])
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
       p.SetHeader(iphOut);
-      tcph.SetSeqNum((*cs).state.last_acked+1,p);
-      (*cs).state.SetLastSent((*cs).state.last_acked+1);
-      tcph.SetAckNum(n+1,p);
+      tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
+      tcph.SetAckNum((*cs).state.GetLastRecvd()+1,p);
       tcph.SetWinSize((*cs).state.GetRwnd(),p);
       tcph.SetSourcePort(c.srcport, p);
       tcph.SetDestPort(c.destport,p);
@@ -238,10 +252,9 @@ int main(int argc, char *argv[])
       tcph.GetSeqNum(n);
       (*cs).state.SetState(FIN_WAIT2);
       tcph.GetWinSize(w);
-      (*cs).state.SetLastRcvd(n);
+      (*cs).state.SetLastRecvd(n);
       (*cs).state.SetSendRwnd(w);
       (*cs).state.SetLastAcked(ackn);
-
     }
     break;
     //rcv: fin, ack, finack
@@ -279,7 +292,7 @@ int main(int argc, char *argv[])
       tcph.GetSeqNum(n);
       (*cs).state.SetState(CLOSED);
       tcph.GetWinSize(w);
-      (*cs).state.SetLastRcvd(n);
+      (*cs).state.SetLastRecvd(n);
       (*cs).state.SetSendRwnd(w);
       (*cs).state.SetLastAcked(ackn);
     }
@@ -290,7 +303,7 @@ int main(int argc, char *argv[])
     default:
     //Freak out. Shouldn't occur.
     cerr<<"Mysterious state error";
-
+    break;
     }
 
 
@@ -325,7 +338,8 @@ int main(int argc, char *argv[])
 	//ignore, send zero error STATUS
 	case CLOSE:
 	//close connection
-	default:	
+	default:
+  break;
 	}
 	
 	
