@@ -15,7 +15,7 @@
 
 #include "Minet.h"
 #include "tcp.h"
-
+#include "constate.h"
 
 using std::cout;
 using std::endl;
