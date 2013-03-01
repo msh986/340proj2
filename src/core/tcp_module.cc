@@ -465,7 +465,7 @@ int main(int argc, char *argv[])
               MinetSend(sock,repl);
               //send if it's ESTABLISHED, else leave in queue
               if((*cs).state.stateOfcnx==ESTABLISHED)
-                sendDataPacket(mux,(*cs));
+                sendDataPacket(mux,cs);
           }
 	  }else{
 	    //no such connection, error
