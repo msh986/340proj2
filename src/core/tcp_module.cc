@@ -27,27 +27,27 @@ void sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping &cs)
     unsigned offset;
     unsigned bytes = state.SendBuffer.GetSize();
     size_t packetsize;
-    (*cs).state.SendPacketPayload(offset,packetsize,bytes);
+    (cs).state.SendPacketPayload(offset,packetsize,bytes);
     while (packetsize > 0) {
         char newdata[600];
-        (*cs).state.SendBuffer.GetData(newdata,packetsize,offset);
+        (cs).state.SendBuffer.GetData(newdata,packetsize,offset);
         Packet p(Buffer(newdata,packetsize));
         IPHeader iph;
-        iph.SetDestIP((*cs).connection.dest);
-        iph.SetSourceIP((*cs).connection.src);
+        iph.SetDestIP((cs).connection.dest);
+        iph.SetSourceIP((cs).connection.src);
         iph.SetTotalLength(IP_HEADER_BASE_LENGTH + TCP_HEADER_BASE_LENGTH + packetsize);
         iph.SetProtocol(IP_PROTO_TCP);
         
-        p.PushFrontHeader(ipHeader);
+        p.PushFrontHeader(iph);
         
         //Set TCP Header
         TCPHeader tcph;
-        tcph.SetSourcePort((*cs).connection.srcport, p);
-        tcph.SetDestPort((*cs).connection.destport, p);
+        tcph.SetSourcePort((cs).connection.srcport, p);
+        tcph.SetDestPort((cs).connection.destport, p);
         tcph.SetHeaderLen(TCP_HEADER_BASE_LENGTH / 4, p);
-        tcph.SetAckNum((*cs).state.GetLastRecvd() + 1, p);
-        tcph.SetSeqNum((*cs).state.last_sent + 1, p);
-        tcph.SetWinSize((*cs).state.GetRwnd(), p);
+        tcph.SetAckNum((cs).state.GetLastRecvd() + 1, p);
+        tcph.SetSeqNum((cs).state.last_sent + 1, p);
+        tcph.SetWinSize((cs).state.GetRwnd(), p);
         tcph.SetUrgentPtr(0, p);
         
         unsigned char flags = 0;
@@ -57,13 +57,13 @@ void sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping &cs)
         p.PushBackHeader(tcph);
         
         MinetSend(mux,p);
-        (*cs).state.last_sent += packetsize;
-        (*cs).state.SendPacketPayload(offset,packetsize,bytes);
-        if(!(*cs).bTmrActive){
+        (cs).state.last_sent += packetsize;
+        (cs).state.SendPacketPayload(offset,packetsize,bytes);
+        if(!(cs).bTmrActive){
             //set timer if there isn't one already
-            (*cs).timeout = Time()+80;
+            (cs).timeout = Time()+80;
             //say it's active
-            (*cs).bTmrActive = true;
+            (cs).bTmrActive = true;
         }
     }
 }
