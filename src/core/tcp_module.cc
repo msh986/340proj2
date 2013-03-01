@@ -321,7 +321,7 @@ int main(int argc, char *argv[])
         	MinetSend(sock, repl );
 		break;
 	case CONNECT:
-	cs = clist.FindMatching(c);
+	cs = clist.FindMatching(s.connection);
 	if(cs!=clist.end())
 	{
 	  //if there's a matching connection
@@ -332,11 +332,10 @@ int main(int argc, char *argv[])
 	    //send SYN
 	    //
 	    //send EOK
-	    //
-	    repl.type = STATUS;
-            repl.error = EOK;
-            repl.connection = s.connection;
-            MinetSend( sock, repl );
+          repl.type = STATUS;
+          repl.error = EOK;
+          repl.connection = s.connection;
+          MinetSend( sock, repl );
 	  }else if((*cs).state==LISTEN){
   	  //passively open
   	    (*cs).state.connection = c;
@@ -396,13 +395,29 @@ int main(int argc, char *argv[])
 	  cs = clist.FindMatching(c);
 	  if(cs!=clist.end())
  	  {
+          unsigned numbytes;
 	    //if in ESTABLISHED, add to send buffer if there is space
 	    // if there are available packets in the window, create them and send them
 	    //reply with how many bytes written
-	    repl.type = STATUS;
-	    repl.error = EOK;
-	    repl.bytes = numbytes;
-	    MinetSend(sock,repl);
+          if((*cs).state.stateOfcnx==CLOSED)
+          {
+              repl.type = STATUS;
+              repl.error = ENOMATCH;
+              MinetSend(sock,repl);
+          }else if ((*cs).state.stateOfcnx==CLOSE_WAIT){
+              repl.type = STATUS;
+              repl.error = EINVALID_OP;
+              MinetSend(sock,repl);
+          }else{
+              numbytes = MIN_MACRO(s.bytes,(*cs).state.TCP_BUFFER_SIZE-(*cs).state.SendBuffer.GetSize());
+              (*cs).state.SendBuffer.AddBack(s.data.ExtractFront(numbytes));
+              repl.bytes = numbytes;
+              repl.type = STATUS;
+              repl.error = EOK;
+              repl.connection = s.connection;
+              MinetSend(sock,repl);
+              //sendpackets(mux,connection,state)
+          }
 	  }else{
 	    //no such connection, error
 	    repl.type = STATUS;
