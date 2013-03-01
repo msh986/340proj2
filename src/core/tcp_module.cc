@@ -21,7 +21,7 @@ using std::endl;
 using std::cerr;
 using std::string;
 
-void sendData(const MinetHandle &mux, const Connection &c, TCPState &state )
+void sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping &cs)
 {
     unsigned offset;
     unsigned bytes = state.SendBuffer.GetSize();
@@ -32,8 +32,8 @@ void sendData(const MinetHandle &mux, const Connection &c, TCPState &state )
         state.SendBuffer.GetData(newdata,packetsize,offset);
         Packet p(Buffer(newdata,packetsize));
         IPHeader iph;
-        iph.SetDestIP(c.dest);
-        iph.SetSourceIP(c.src);
+        iph.SetDestIP(cs.connection.dest);
+        iph.SetSourceIP(cs.connection.src);
         iph.SetTotalLength(IP_HEADER_BASE_LENGTH + TCP_HEADER_BASE_LENGTH + packetsize);
         iph.SetProtocol(IP_PROTO_TCP);
         
@@ -41,12 +41,12 @@ void sendData(const MinetHandle &mux, const Connection &c, TCPState &state )
         
         //Set TCP Header
         TCPHeader tcph;
-        tcph.SetSourcePort(c.srcport, p);
-        tcph.SetDestPort(c.destport, p);
+        tcph.SetSourcePort(cs.connection.srcport, p);
+        tcph.SetDestPort(cs.connection.destport, p);
         tcph.SetHeaderLen(TCP_HEADER_BASE_LENGTH / 4, p);
-        tcph.SetAckNum(state.GetLastRecvd() + 1, p);
-        tcph.SetSeqNum(state.last_sent + 1, p);
-        tcph.SetWinSize(state.GetN(), p);
+        tcph.SetAckNum(cs.state.GetLastRecvd() + 1, p);
+        tcph.SetSeqNum(cs.state.last_sent + 1, p);
+        tcph.SetWinSize(cs.state.GetRwnd(), p);
         tcph.SetUrgentPtr(0, p);
         
         unsigned char flags = 0;
@@ -56,8 +56,14 @@ void sendData(const MinetHandle &mux, const Connection &c, TCPState &state )
         p.PushBackHeader(tcph);
         
         MinetSend(mux,p);
-        state.last_sent += packetsize;
-        state.SendPacketPayload(offset,packetsize,bytes);
+        cs.state.last_sent += packetsize;
+        cs.state.SendPacketPayload(offset,packetsize,bytes);
+        if(!cs.bTmrActive){
+            //set timer if there isn't one already
+            cs.timeout = Time()+80;
+            //say it's active
+            cs.bTmrActive = true;
+        }
     }
 }
 
@@ -456,7 +462,7 @@ int main(int argc, char *argv[])
               repl.error = EOK;
               repl.connection = s.connection;
               MinetSend(sock,repl);
-              //sendpackets(mux,connection,state)
+              sendDataPacket(mux,(*cs));
           }
 	  }else{
 	    //no such connection, error
@@ -488,7 +494,7 @@ int main(int argc, char *argv[])
 	    	repl.type = STATUS;
 	    	repl.error = EOK;
 	    	MinetSend(sock,repl);
-	    }else if((*cs).state.stateOfcnx==CLOSE_WAIT){
+	    }else if((*cs).state.stateOfcnx==SYN_SENT){
 	      //SYN_SENT... 
 	      //
 	      //send FIN
