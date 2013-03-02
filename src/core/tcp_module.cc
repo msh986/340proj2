@@ -20,14 +20,17 @@ using std::cout;
 using std::endl;
 using std::cerr;
 using std::string;
-void sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TCPState> &cs)
+size_t sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TCPState> &cs)
 {
-    unsigned offset;
-    unsigned bytes = cs.state.SendBuffer.GetSize();
+    unsigned offset=((cs.state.last_sent-cs.state.last_acked)>0)?(cs.state.last_sent-cs.state.last_acked):0 ;
+    unsigned bytes = cs.state.SendBuffer.GetSize()-offset;
     size_t packetsize;
-    cs.state.SendPacketPayload(offset,packetsize,bytes);
-    do {
-        char newdata[600];
+    //do {
+        unsigned unsentDataInBuffer = cs.state.SendBuffer.GetSize() - offset;
+         packetsize = ( unsentDataInBuffer < 536 ) ? unsentDataInBuffer : 536;
+
+       // cs.state.SendPacketPayload(offset,packetsize,bytes);
+        char newdata[10000];
         cs.state.SendBuffer.GetData(newdata,packetsize,offset);
         Packet p(Buffer(newdata,packetsize));
         IPHeader iph;
@@ -58,8 +61,9 @@ void sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TCPS
   cerr << "TCP Packet: IP Header is "<<iph<<"\n and ";
   cerr << "TCP Header is "<<tcph << "\n and ";
   cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
+  cerr <<"\n Data is: "<<newdata<<"\n";
 
-       cs.state.last_sent += packetsize;
+       //cs.state.SetLastSent(cs.state.last_sent+packetsize);
        cs.state.SendPacketPayload(offset,packetsize,bytes);
         MinetSend(mux,p);
         if(!cs.bTmrActive){
@@ -68,8 +72,55 @@ void sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TCPS
             //say it's active
            cs.bTmrActive = true;
         }
-    }while (packetsize > 0);
+    //}while (packetsize > 0);
+        return packetsize;
 }
+void sendAck(const MinetHandle &mux, struct ConnectionToStateMapping<TCPState> &cs)
+{
+    
+        Packet p=Packet();
+        IPHeader iph;
+        iph.SetDestIP(cs.connection.dest);
+        iph.SetSourceIP(cs.connection.src);
+        iph.SetHeaderLength(IP_HEADER_BASE_LENGTH/4);
+        iph.SetTotalLength(40);
+        iph.SetProtocol(IP_PROTO_TCP);
+        
+        p.PushFrontHeader(iph);
+        
+        //Set TCP Header
+        TCPHeader tcph;
+        tcph.SetSourcePort(cs.connection.srcport, p);
+        tcph.SetDestPort(cs.connection.destport, p);
+        tcph.SetHeaderLen(TCP_HEADER_BASE_LENGTH / 4, p);
+        tcph.SetAckNum(cs.state.GetLastRecvd() + 1, p);
+        tcph.SetSeqNum(cs.state.last_sent + 1, p);
+        tcph.SetWinSize(cs.state.GetRwnd(), p);
+        tcph.SetUrgentPtr(0, p);
+        
+        unsigned char flags = 0;
+        SET_ACK(flags);
+        tcph.SetFlags(flags, p);
+        
+        p.PushBackHeader(tcph);
+        cerr<<"\n OUTBOUND PKT HERE\n";
+  cerr << "TCP Packet: IP Header is "<<iph<<"\n and ";
+  cerr << "TCP Header is "<<tcph << "\n and ";
+  cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
+  //cerr <<"\n Data is: "<<newdata<<"\n";
+
+      // cs.state.SetLastSent(cs.state.last_sent+packetsize);
+      // cs.state.SendPacketPayload(offset,packetsize,bytes);
+        MinetSend(mux,p);
+        if(!cs.bTmrActive){
+            //set timer if there isn't one already
+           cs.timeout = Time()+80;
+            //say it's active
+           cs.bTmrActive = true;
+        }
+    //}while (packetsize > 0);
+}
+
 int main(int argc, char *argv[])
 {
   MinetHandle mux, sock;
@@ -119,6 +170,7 @@ int main(int argc, char *argv[])
   unsigned short w;
   unsigned int ackn;
   unsigned char tos;
+  size_t numBytesSent;
   bool checksumok;
   bool validSeq;
 	unsigned tcphlen=TCPHeader::EstimateTCPHeaderLength(p);
@@ -198,8 +250,11 @@ int main(int argc, char *argv[])
             data,
             len,
             EOK);
+
+      numBytesSent=sendDataPacket(mux,(*cs));
+      (*cs).state.SetLastSent((*cs).state.last_sent+numBytesSent);
       MinetSend(sock,write);
-      sendDataPacket(mux,(*cs));
+     // sendAck(mux,(*cs));
       }
       else
       {
@@ -234,7 +289,7 @@ int main(int argc, char *argv[])
       tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
       (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
       tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
-      tcphOut.SetWinSize((*cs).state.GetRwnd(),pOut);
+      tcphOut.SetWinSize((*cs).state.GetN(),pOut);
       tcphOut.SetSourcePort(c.srcport, pOut);
       tcphOut.SetDestPort(c.destport,pOut);
       SET_ACK(flags);
@@ -286,7 +341,7 @@ int main(int argc, char *argv[])
       (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
       (*cs).state.SetLastRecvd(n);
       tcph.SetAckNum((*cs).state.GetLastRecvd(),p);
-      tcph.SetWinSize((*cs).state.GetRwnd(),p);
+      tcph.SetWinSize((*cs).state.GetN(),p);
       tcph.SetSourcePort(c.srcport, p);
       tcph.SetDestPort(c.destport,p);
       CLR_SYN(flags);
@@ -320,22 +375,23 @@ int main(int argc, char *argv[])
       MinetSend(mux,p);
     }
     else if(IS_ACK(flags))
-    { 
+    {
       tcph.GetSeqNum(n);
       validSeq=(*cs).state.SetLastRecvd(n,len);
       if(validSeq){
-        cerr<<"\nGot a valid sequence number in finwait2\n";
+        cerr<<"\nGot a valid sequence number in finwait1\n";
       tcph.GetAckNum(ackn);
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
       (*cs).state.SetLastAcked(ackn);
       if((*cs).state.SendBuffer.GetSize()==0)
-      {(*cs).state.SetState(FIN_WAIT2);
+      {cerr<<"emptysendbuff";
+        (*cs).state.SetState(FIN_WAIT2);
         pOut.PushFrontHeader(iphOut);
       tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
       (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
       tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
-      tcphOut.SetWinSize((*cs).state.GetRwnd(),pOut);
+      tcphOut.SetWinSize((*cs).state.GetN(),pOut);
       tcphOut.SetSourcePort(c.srcport, pOut);
       tcphOut.SetDestPort(c.destport,pOut);
       SET_FIN(flags);
@@ -347,7 +403,10 @@ int main(int argc, char *argv[])
       MinetSend(mux,pOut);
       }
       else{
-        sendDataPacket(mux,(*cs));
+        cerr<<"option2";
+        //sendDataPacket(mux,(*cs));
+        numBytesSent=sendDataPacket(mux,(*cs));
+                (*cs).state.SetLastSent((*cs).state.last_sent+numBytesSent);
       }
       }
     }
@@ -508,7 +567,7 @@ int main(int argc, char *argv[])
         cs = clist.FindMatching(s.connection);
         if(cs!=clist.end())
         {
-          unsigned numbytes;
+          size_t numbytes;
   //if in ESTABLISHED, add to send buffer if there is space
   // if there are available packets in the window, create them and send them
   //reply with how many bytes written
@@ -522,16 +581,18 @@ int main(int argc, char *argv[])
             repl.error = EINVALID_OP;
             MinetSend(sock,repl);
           }else{
-            numbytes = MIN_MACRO(s.bytes,(*cs).state.TCP_BUFFER_SIZE-(*cs).state.SendBuffer.GetSize());
+            numbytes = MIN_MACRO(s.data.GetSize(),(*cs).state.TCP_BUFFER_SIZE-(*cs).state.SendBuffer.GetSize());
             (*cs).state.SendBuffer.AddBack(s.data.ExtractFront(numbytes));
+            cerr<<"\n the send buffer is\n"<<(*cs).state.SendBuffer<<"\n";
             repl.bytes = numbytes;
             repl.type = STATUS;
             repl.error = EOK;
             repl.connection = s.connection;
             MinetSend(sock,repl);
                 //send if it's ESTABLISHED, else leave in queue
-            if((*cs).state.stateOfcnx==ESTABLISHED)
-              {sendDataPacket(mux,(*cs));}
+             if((*cs).state.stateOfcnx==ESTABLISHED)
+              {numbytes=sendDataPacket(mux,(*cs));
+               (*cs).state.SetLastSent((*cs).state.last_sent+numbytes);}
           }
         }else{
   //no such connection, error
