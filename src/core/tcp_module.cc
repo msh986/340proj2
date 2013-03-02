@@ -22,13 +22,12 @@ using std::cerr;
 using std::string;
 void sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TCPState> &cs)
 {
-    unsigned offset = cs.state.last_sent - cs.state.last_acked;
-    unsigned bytes = cs.state.SendBuffer.GetSize() - offset;
+    unsigned offset;
+    unsigned bytes = cs.state.SendBuffer.GetSize();
     size_t packetsize;
     cs.state.SendPacketPayload(offset,packetsize,bytes);
     do {
-        char newdata[10000];
-        cerr << "offset is: " << offset << "packetsize is: " << packetsize;
+        char newdata[600];
         cs.state.SendBuffer.GetData(newdata,packetsize,offset);
         Packet p(Buffer(newdata,packetsize));
         IPHeader iph;
@@ -56,12 +55,11 @@ void sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TCPS
         
         p.PushBackHeader(tcph);
         cerr<<"\n OUTBOUND PKT HERE\n";
-      cerr << "TCP Packet: IP Header is "<<iph<<"\n and ";
-      cerr << "TCP Header is "<<tcph << "\n and ";
-      cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
+  cerr << "TCP Packet: IP Header is "<<iph<<"\n and ";
+  cerr << "TCP Header is "<<tcph << "\n and ";
+  cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
 
        cs.state.last_sent += packetsize;
-        bytes = cs.state.SendBuffer.GetSize() - packetsize - offset;
        cs.state.SendPacketPayload(offset,packetsize,bytes);
         MinetSend(mux,p);
         if(!cs.bTmrActive){
