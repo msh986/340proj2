@@ -349,15 +349,13 @@ int main(int argc, char *argv[])
     { //FIX ME
       tcph.GetSeqNum(n);
       tcph.GetAckNum(ackn);
-      validSeq=(*cs).state.SetLastRecvd(n,len);
-      if(validSeq){
+      (*cs).state.SetLastRecvd(n);
       (*cs).state.SetState(ESTABLISHED);
       (*cs).state.SetLastAcked(ackn);
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
       //p.SetHeader(iphOut);
      // tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
-      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
       //(*cs).state.SetLastRecvd(n);
      // tcph.SetAckNum((*cs).state.GetLastRecvd(),p);
       //tcph.SetWinSize((*cs).state.GetN(),p);
@@ -369,6 +367,7 @@ int main(int argc, char *argv[])
     //start timeout
       //MinetSend(mux,p);
       sendEmptyPacket(mux,(*cs),flags);
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
     }}
     break;
     case FIN_WAIT1:
