@@ -605,6 +605,8 @@ int main(int argc, char *argv[])
                         //send SYN (and start timeout) x
                         SET_SYN(flags);
                         sendEmptyPacket(mux, newCSM, flags);
+                        sleep(3);
+                        sendEmptyPacket(mux, newCSM, flags);
                         cerr << "sent packet";
                         //send EOK x
                         repl.type = STATUS;
