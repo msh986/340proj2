@@ -475,6 +475,7 @@ int main(int argc, char *argv[])
       tcph.GetAckNum(ackn);
       tcph.GetWinSize(w);
       (*cs).state.SetLastAcked(ackn);
+      (*cs).state.SetLastRecvd((*cs).state.GetLastRecvd()+1);
       (*cs).state.SetState(TIME_WAIT);
       // pOut.PushFrontHeader(iphOut);
       // tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
