@@ -112,31 +112,31 @@ class ConnectionList : public std::deque<ConnectionToStateMapping<STATE> > {
     typedef typename ConnectionList<STATE>::const_iterator const_iterator;
     
     typename ConnectionList<STATE>::iterator FindEarliest() {
-	typename ConnectionList<STATE>::iterator ptr = this->end();
-	typename ConnectionList<STATE>::iterator i = this->begin();
-	
-	// No connections in list
-	if(this->empty())
-	    return this->end();
-	
-	// 1 connection in list
-	if(this->size() == 1) {
-	    if((*i).bTmrActive == true)
-		return this->begin();
-	    else {
-		return this->end();
-	    }
-	}
-	
-	// More than one connection in list
-	Time min=(*i).timeout;
-	for (; i != this->end(); ++i) {
-	    if ((*i).bTmrActive == true && (*i).timeout <= min) {
-		min=(*i).timeout;
-		ptr=i;
-	    }
-	}
-	return ptr;
+		typename ConnectionList<STATE>::iterator ptr = this->end();
+		typename ConnectionList<STATE>::iterator i = this->begin();
+		
+		// No connections in list
+		if(this->empty())
+		    return this->end();
+		
+		// 1 connection in list
+		if(this->size() == 1) {
+		    if((*i).bTmrActive == true)
+			return this->begin();
+		    else {
+			return this->end();
+		    }
+		}
+		
+		// More than one connection in list
+		Time min=(*i).timeout;
+		for (; i != this->end(); ++i) {
+		    if ((*i).bTmrActive == true && (*i).timeout <= min) {
+			min=(*i).timeout;
+			ptr=i;
+		    }
+		}
+		return ptr;
     }
     
     typename ConnectionList<STATE>::iterator FindMatching(const Connection &rhs) {
