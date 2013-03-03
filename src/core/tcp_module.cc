@@ -600,6 +600,7 @@ int main(int argc, char *argv[])
                         //send SYN (and start timeout) x
                         SET_SYN(flags);
                         sendEmptyPacket(mux, newCSM, flags);
+                        cerr << "sent packet";
                         //send EOK x
                         repl.type = STATUS;
                         repl.error = EOK;
@@ -674,9 +675,6 @@ int main(int argc, char *argv[])
                         if((*cs).state.stateOfcnx==ESTABLISHED||(*cs).state.stateOfcnx==SYN_RCVD){
                             //if in ESTABLISHED or SYN_RCVD, move to FIN_WAIT_1
                             (*cs).state.SetState(FIN_WAIT1);
-                            //send FIN
-                            SET_FIN(flags);
-                            sendEmptyPacket(mux, (*cs), flags);
                             //send OK
                             repl.type = STATUS;
                             repl.error = EOK;
@@ -684,9 +682,6 @@ int main(int argc, char *argv[])
                         }else if((*cs).state.stateOfcnx==CLOSE_WAIT){
                             //if in close_wait, go to LAST_ACK
                             (*cs).state.SetState(FIN_WAIT1);
-                            //send FIN
-                            SET_FIN(flags);
-                            sendEmptyPacket(mux, (*cs), flags);
                             //send OK
                             repl.type = STATUS;
                             repl.error = EOK;
@@ -695,8 +690,6 @@ int main(int argc, char *argv[])
                             //SYN_SENT...
                             //send FIN
                             (*cs).state.SetState(FIN_WAIT1);
-                            SET_FIN(flags);
-                            sendEmptyPacket(mux, (*cs), flags);
                             //go to somewhere?
                             repl.type = STATUS;
                             repl.error = EOK;
