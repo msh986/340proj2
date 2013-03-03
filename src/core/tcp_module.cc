@@ -368,7 +368,13 @@ int main(int argc, char *argv[])
       //MinetSend(mux,p);
       sendEmptyPacket(mux,(*cs),flags);
       (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
-    }}
+      SockRequestResponse write;
+      write.type=WRITE;
+      write.connection=(*cs).connection;
+      write.error=EOK;
+      write.bytes=0;
+      MinetSend(sock,write);
+    }
     break;
     case FIN_WAIT1:
     cerr<<"in mux FIN_WAIT1";
