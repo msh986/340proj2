@@ -531,6 +531,7 @@ int main(int argc, char *argv[])
         SockRequestResponse repl;
         Connection c=s.connection;
         ConnectionList<TCPState>::iterator cs;
+          unsigned char flags = 0;
         switch(s.type)
         {
           case FORWARD:
@@ -548,8 +549,10 @@ int main(int argc, char *argv[])
             {
   //closed
               (*cs).state.SetState(SYN_SENT);
-  //send SYN
-  //
+  //send SYN x
+                (*cs).connection = s.connection;
+                SET_SYN(flags);
+                sendEmptyPacket(mux, (*cs), flags);
   //send EOK
               repl.type = STATUS;
               repl.error = EOK;
@@ -559,8 +562,10 @@ int main(int argc, char *argv[])
      //passively open
              (*cs).connection = s.connection;
              (*cs).state.SetState(SYN_SENT);
-  //send SYN
-  //
+  //send SYN x
+             (*cs).connection = s.connection;
+             SET_SYN(flags);
+             sendEmptyPacket(mux, (*cs), flags);
   //send EOK
              repl.type = STATUS;
              repl.error = EOK;
@@ -578,12 +583,12 @@ int main(int argc, char *argv[])
           }
         }else{
   //doesn't exist
-         // newState =  TCPState(1111, SYN_SENT, 0);
-  //send SYN (and start timeout)
             //Create and save mapping
-        // newCSM =  ConnectionToStateMapping<TCPState>(s.connection, Time(), newState, false);
-          clist.push_back(newCSM);
-  //send EOK
+         clist.push_back(newCSM);
+            //send SYN (and start timeout) x
+            SET_SYN(flags);
+            sendEmptyPacket(mux, newCSM, flags);
+  //send EOK x
           repl.type = STATUS;
           repl.error = EOK;
           repl.connection = s.connection;
@@ -591,8 +596,6 @@ int main(int argc, char *argv[])
         }
         break;
         case ACCEPT:
-       // newState=  TCPState(0, LISTEN, 0);
-       // newCSM= ConnectionToStateMapping<TCPState>(s.connection, Time(), newState, false);
         newCSM.state.SetState(LISTEN);
         newCSM.state.SetLastAcked(0);
         clist.push_back(newCSM);
@@ -640,8 +643,9 @@ int main(int argc, char *argv[])
             MinetSend(sock,repl);
                 //send if it's ESTABLISHED, else leave in queue
              if((*cs).state.stateOfcnx==ESTABLISHED)
-              {numbytes=sendDataPacket(mux,(*cs));
-               (*cs).state.SetLastSent((*cs).state.last_sent+numbytes);}
+              {
+                numbytes=sendDataPacket(mux,(*cs));
+                (*cs).state.SetLastSent((*cs).state.last_sent+numbytes);}
           }
         }else{
   //no such connection, error
@@ -659,7 +663,8 @@ int main(int argc, char *argv[])
   //if in ESTABLISHED or SYN_RCVD, move to FIN_WAIT_1
             (*cs).state.SetState(FIN_WAIT1);
   //send FIN
-  //
+              SET_FIN(flags);
+              sendEmptyPacket(mux, (*cs), flags);
   //send OK
             repl.type = STATUS;
             repl.error = EOK;
@@ -668,16 +673,18 @@ int main(int argc, char *argv[])
   //if in close_wait, go to LAST_ACK
             (*cs).state.SetState(FIN_WAIT1);
   //send FIN
-  //
+              SET_FIN(flags);
+              sendEmptyPacket(mux, (*cs), flags);
   //send OK
             repl.type = STATUS;
             repl.error = EOK;
             MinetSend(sock,repl);
           }else if((*cs).state.stateOfcnx==SYN_SENT){
   //SYN_SENT...
-  //
-  //send FIN
-
+              //send FIN
+              (*cs).state.SetState(FIN_WAIT1);
+              SET_FIN(flags);
+              sendEmptyPacket(mux, (*cs), flags);
   //go to somewhere?
             repl.type = STATUS;
             repl.error = EOK;
@@ -705,7 +712,7 @@ int main(int argc, char *argv[])
   }
   if(event.eventtype==MinetEvent::Timeout)
   {
-    cerr<<"timout here!";
+    cerr<<"timeout here!";
     if(clist.FindEarliest()==clist.end())
     {
       timeoutVal=0;
