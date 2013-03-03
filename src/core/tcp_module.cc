@@ -686,11 +686,13 @@ int main(int argc, char *argv[])
                             MinetSend(sock,repl);
                         }else if((*cs).state.stateOfcnx==CLOSE_WAIT){
                             //if in close_wait, go to LAST_ACK
-                            (*cs).state.SetState(FIN_WAIT1);
+                            (*cs).state.SetState(LAST_ACK);
                             //send OK
                             repl.type = STATUS;
                             repl.error = EOK;
                             MinetSend(sock,repl);
+                            SET_FIN(flags);
+                            sendEmptyPacket(mux,(*cs),flags);
                         }else if((*cs).state.stateOfcnx==SYN_SENT){
                             //SYN_SENT...
                             //send FIN
