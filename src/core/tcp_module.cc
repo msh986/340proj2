@@ -86,55 +86,6 @@ size_t sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TC
     //}while (packetsize > 0);
         return packetsize;
 }
-void send_data( const MinetHandle & mux, const Connection & c, TCPState & state )
-{
-    unsigned i = 0;
-
-    std::cerr << "send_data: sending " << state.SendBuffer.GetSize() << " bytes of data over the network"<< std::endl;
-
-    while ( i < state.SendBuffer.GetSize() )
-    {
-        unsigned unsentDataInBuffer = state.SendBuffer.GetSize() - i;
-        unsigned dataToSend = ( unsentDataInBuffer < 536 ) ? unsentDataInBuffer : 536;
-
-        char tempStorage[10000];
-        state.SendBuffer.GetData( tempStorage, dataToSend, i );
-
-        Packet ret( Buffer(tempStorage, dataToSend) );
-
-        //Set IP Header
-        IPHeader ipHeader;
-        ipHeader.SetSourceIP(c.src);
-        ipHeader.SetDestIP(c.dest);
-        ipHeader.SetTotalLength(IP_HEADER_BASE_LENGTH + TCP_HEADER_BASE_LENGTH + dataToSend);
-        ipHeader.SetProtocol(IP_PROTO_TCP);
-
-        ret.PushFrontHeader(ipHeader);
-
-        //Set TCP Header
-        TCPHeader tcpHeader;
-        tcpHeader.SetSourcePort(c.srcport, ret);
-        tcpHeader.SetDestPort(c.destport, ret);
-        tcpHeader.SetHeaderLen(TCP_HEADER_BASE_LENGTH / 4, ret);
-        tcpHeader.SetAckNum(state.GetLastRecvd() + 1, ret);
-        tcpHeader.SetSeqNum(state.last_sent + 1, ret);
-        tcpHeader.SetWinSize(state.GetN(), ret);
-        tcpHeader.SetUrgentPtr(0, ret);
-
-        unsigned char tempFlags = 0;
-        SET_ACK(tempFlags);
-        tcpHeader.SetFlags(tempFlags, ret);
-
-        ret.PushBackHeader(tcpHeader);
-
-        MinetSend(mux, ret);
-
-        std::cerr << "send_data: sent " << dataToSend << " bytes of data over the network"<< std::endl;
-
-        state.last_sent += dataToSend;
-        i += dataToSend;
-    }
-}
 void sendAck(const MinetHandle &mux, struct ConnectionToStateMapping<TCPState> &cs)
 {
     
@@ -294,6 +245,13 @@ int main(int argc, char *argv[])
       pOut.PushBackHeader(tcphOut);
     //start timeout
       MinetSend(mux,p);
+      SockRequestResponse write(WRITE,
+            (*cs).connection,
+            data,
+            len,
+            EOK);
+          
+      MinetSend(sock,write);
       }
       else if(IS_ACK(flags))
       {cerr<<"\n got valid ack pkt\n";
@@ -530,8 +488,8 @@ int main(int argc, char *argv[])
     }
     }
     break;
-    //case TIME_WAIT:
-    //WAIT 2 RTT, ERASE
+    case TIME_WAIT:
+    break;
     case LAST_ACK:
     cerr<<"In mux last_ack";
     if(IS_ACK(flags)){
