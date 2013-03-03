@@ -86,7 +86,7 @@ size_t sendDataPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TC
     //}while (packetsize > 0);
         return packetsize;
 }
-void sendAck(const MinetHandle &mux, struct ConnectionToStateMapping<TCPState> &cs)
+void sendEmptyPacket(const MinetHandle &mux, struct ConnectionToStateMapping<TCPState> &cs, const unsigned char &flags)
 {
     
         Packet p=Packet();
@@ -96,28 +96,23 @@ void sendAck(const MinetHandle &mux, struct ConnectionToStateMapping<TCPState> &
         iph.SetHeaderLength(IP_HEADER_BASE_LENGTH/4);
         iph.SetTotalLength(40);
         iph.SetProtocol(IP_PROTO_TCP);
-        
         p.PushFrontHeader(iph);
-        
         //Set TCP Header
         TCPHeader tcph;
         tcph.SetSourcePort(cs.connection.srcport, p);
         tcph.SetDestPort(cs.connection.destport, p);
         tcph.SetHeaderLen(TCP_HEADER_BASE_LENGTH / 4, p);
         tcph.SetAckNum(cs.state.GetLastRecvd() + 1, p);
-        tcph.SetSeqNum(cs.state.last_sent + 1, p);
-        tcph.SetWinSize(cs.state.GetRwnd(), p);
+        tcph.SetSeqNum(cs.state.last_sent+1, p);
+        tcph.SetWinSize(cs.state.GetN(), p);
         tcph.SetUrgentPtr(0, p);
-        
-        unsigned char flags = 0;
-        SET_ACK(flags);
         tcph.SetFlags(flags, p);
         
         p.PushBackHeader(tcph);
         cerr<<"\n OUTBOUND PKT HERE\n";
-  cerr << "TCP Packet: IP Header is "<<iph<<"\n and ";
-  cerr << "TCP Header is "<<tcph << "\n and ";
-  cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
+      cerr << "TCP Packet: IP Header is "<<iph<<"\n and ";
+      cerr << "TCP Header is "<<tcph << "\n and ";
+      cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
   //cerr <<"\n Data is: "<<newdata<<"\n";
 
       // cs.state.SetLastSent(cs.state.last_sent+packetsize);
@@ -232,19 +227,20 @@ int main(int argc, char *argv[])
       (*cs).state.SetLastAcked(ackn);
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
-      pOut.PushFrontHeader(iphOut);
-      tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
+      //pOut.PushFrontHeader(iphOut);
+      //tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
       (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
-      tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
-      tcphOut.SetWinSize((*cs).state.GetRwnd(),p);
-      tcphOut.SetSourcePort(c.srcport, pOut);
-      tcphOut.SetDestPort(c.destport,pOut);
+      // tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
+      // tcphOut.SetWinSize((*cs).state.GetRwnd(),p);
+      // tcphOut.SetSourcePort(c.srcport, pOut);
+      // tcphOut.SetDestPort(c.destport,pOut);
       CLR_FIN(flags);
       SET_ACK(flags);
-      tcphOut.SetFlags(flags,pOut);
-      pOut.PushBackHeader(tcphOut);
+      //tcphOut.SetFlags(flags,pOut);
+      //pOut.PushBackHeader(tcphOut);
     //start timeout
-      MinetSend(mux,p);
+      //MinetSend(mux,p);
+      sendEmptyPacket(mux,(*cs),flags);
       SockRequestResponse write(WRITE,
             (*cs).connection,
             data,
@@ -305,21 +301,22 @@ int main(int argc, char *argv[])
       tcph.GetWinSize(w);
       (*cs).state.SetLastRecvd(n);
       (*cs).state.SetSendRwnd(w);
-      pOut.PushFrontHeader(iphOut);
-      tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
-      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
-      tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
-      tcphOut.SetWinSize((*cs).state.GetN(),pOut);
-      tcphOut.SetSourcePort(c.srcport, pOut);
-      tcphOut.SetDestPort(c.destport,pOut);
+      // pOut.PushFrontHeader(iphOut);
+      // tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
+      // tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
+      // tcphOut.SetWinSize((*cs).state.GetN(),pOut);
+      // tcphOut.SetSourcePort(c.srcport, pOut);
+      // tcphOut.SetDestPort(c.destport,pOut);
       SET_ACK(flags);
       SET_SYN(flags);
-      tcphOut.SetHeaderLen(5,pOut);
-      tcphOut.SetFlags(flags,pOut);
-      tcphOut.SetUrgentPtr(0,pOut);
-      pOut.PushBackHeader(tcphOut);
+      // tcphOut.SetHeaderLen(5,pOut);
+      //tcphOut.SetFlags(flags,pOut);
+      //tcphOut.SetUrgentPtr(0,pOut);
+      //pOut.PushBackHeader(tcphOut);
     //start timeout
-      MinetSend(mux,pOut);
+      //MinetSend(mux,pOut);
+      sendEmptyPacket(mux,(*cs),flags);
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
     }
     break;
     case SYN_RCVD:
@@ -330,7 +327,7 @@ int main(int argc, char *argv[])
       tcph.GetSeqNum(n);
       (*cs).state.SetState(ESTABLISHED);
       tcph.GetWinSize(w);
-      //(*cs).state.SetLastRecvd(n);
+     // (*cs).state.SetLastRecvd(n);
       (*cs).state.SetSendRwnd(w);
       (*cs).state.SetLastAcked(ackn);
       SockRequestResponse write;
@@ -352,24 +349,26 @@ int main(int argc, char *argv[])
     { //FIX ME
       tcph.GetSeqNum(n);
       tcph.GetAckNum(ackn);
-      if(ackn==(*cs).state.GetLastSent()){
-     (*cs).state.SetState(ESTABLISHED);
+      validSeq=(*cs).state.SetLastRecvd(n,len);
+      if(validSeq){
+      (*cs).state.SetState(ESTABLISHED);
       (*cs).state.SetLastAcked(ackn);
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
-      p.SetHeader(iphOut);
-      tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
+      //p.SetHeader(iphOut);
+     // tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
       (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
-      (*cs).state.SetLastRecvd(n);
-      tcph.SetAckNum((*cs).state.GetLastRecvd(),p);
-      tcph.SetWinSize((*cs).state.GetN(),p);
-      tcph.SetSourcePort(c.srcport, p);
-      tcph.SetDestPort(c.destport,p);
+      //(*cs).state.SetLastRecvd(n);
+     // tcph.SetAckNum((*cs).state.GetLastRecvd(),p);
+      //tcph.SetWinSize((*cs).state.GetN(),p);
+      //tcph.SetSourcePort(c.srcport, p);
+      //tcph.SetDestPort(c.destport,p);
       CLR_SYN(flags);
-      tcph.SetFlags(flags,p);
-      p.SetHeader(tcph);
+      //tcph.SetFlags(flags,p);
+      //p.SetHeader(tcph);
     //start timeout
-      MinetSend(mux,p);
+      //MinetSend(mux,p);
+      sendEmptyPacket(mux,(*cs),flags);
     }}
     break;
     case FIN_WAIT1:
@@ -378,27 +377,31 @@ int main(int argc, char *argv[])
     {//FIX ME
       (*cs).state.SetState(TIME_WAIT);
       tcph.GetSeqNum(n);
+      validSeq=(*cs).state.SetLastRecvd(n,len);
+      if(validSeq)
+      {
       tcph.GetAckNum(ackn);
       (*cs).state.SetLastAcked(ackn);
       tcph.GetWinSize(w);
       (*cs).state.SetSendRwnd(w);
-      p.SetHeader(iphOut);
-      tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
-      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
-      tcph.SetAckNum((*cs).state.GetLastRecvd()+1,p);
-      tcph.SetWinSize((*cs).state.GetRwnd(),p);
-      tcph.SetSourcePort(c.srcport, p);
-      tcph.SetDestPort(c.destport,p);
+      //p.SetHeader(iphOut);
+      //tcph.SetSeqNum((*cs).state.GetLastAcked()+1,p);
+      // tcph.SetAckNum((*cs).state.GetLastRecvd()+1,p);
+      // tcph.SetWinSize((*cs).state.GetRwnd(),p);
+      // tcph.SetSourcePort(c.srcport, p);
+      // tcph.SetDestPort(c.destport,p);
       CLR_FIN(flags);
-      tcph.SetFlags(flags,p);
-      p.SetHeader(tcph);
-    //start timeout
-      MinetSend(mux,p);
-      cerr<<"\n OUTBOUND PKT HERE\n";
-      cerr << "TCP Packet: IP Header is "<<iphOut<<"\n and ";
-      cerr << "TCP Header is "<<tcphOut << "\n and ";
-      cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
-    }
+    //   tcph.SetFlags(flags,p);
+    //   p.SetHeader(tcph);
+    // //start timeout
+    //   MinetSend(mux,p);
+      // cerr<<"\n OUTBOUND PKT HERE\n";
+      // cerr << "TCP Packet: IP Header is "<<iphOut<<"\n and ";
+      // cerr << "TCP Header is "<<tcphOut << "\n and ";
+      // cerr << "Checksum is " << (tcph.IsCorrectChecksum(p) ? "VALID" : "INVALID");
+      sendEmptyPacket(mux,(*cs),flags);
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
+    }}
     else if(IS_ACK(flags))
     {
       tcph.GetSeqNum(n);
@@ -412,20 +415,22 @@ int main(int argc, char *argv[])
       if((*cs).state.SendBuffer.GetSize()==0)
       {cerr<<"emptysendbuff";
        (*cs).state.SetState(FIN_WAIT2);
-       pOut.PushFrontHeader(iphOut);
-      tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
-      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
-      tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
-      tcphOut.SetWinSize((*cs).state.GetN(),pOut);
-      tcphOut.SetSourcePort(c.srcport, pOut);
-      tcphOut.SetDestPort(c.destport,pOut);
+       //pOut.PushFrontHeader(iphOut);
+      //tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
+      // tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
+      // tcphOut.SetWinSize((*cs).state.GetN(),pOut);
+      // tcphOut.SetSourcePort(c.srcport, pOut);
+      // tcphOut.SetDestPort(c.destport,pOut);
       SET_FIN(flags);
-      tcphOut.SetHeaderLen(5,pOut);
-      tcphOut.SetFlags(flags,pOut);
-      tcphOut.SetUrgentPtr(0,pOut);
-      pOut.PushBackHeader(tcphOut);
-    //start timeout
-      MinetSend(mux,pOut);
+    //   tcphOut.SetHeaderLen(5,pOut);
+    //   tcphOut.SetFlags(flags,pOut);
+    //   tcphOut.SetUrgentPtr(0,pOut);
+    //   pOut.PushBackHeader(tcphOut);
+    // //start timeout
+    //   MinetSend(mux,pOut);
+      sendEmptyPacket(mux,(*cs),flags);
+
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
       }
       else{
         cerr<<"option2";
@@ -471,20 +476,22 @@ int main(int argc, char *argv[])
       tcph.GetWinSize(w);
       (*cs).state.SetLastAcked(ackn);
       (*cs).state.SetState(TIME_WAIT);
-      pOut.PushFrontHeader(iphOut);
-      tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
-      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
-      tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
-      tcphOut.SetWinSize((*cs).state.GetN(),pOut);
-      tcphOut.SetSourcePort(c.srcport, pOut);
-      tcphOut.SetDestPort(c.destport,pOut);
+      // pOut.PushFrontHeader(iphOut);
+      // tcphOut.SetSeqNum((*cs).state.GetLastAcked()+1,pOut);
+      // tcphOut.SetAckNum((*cs).state.GetLastRecvd()+1,pOut);
+      // tcphOut.SetWinSize((*cs).state.GetN(),pOut);
+      // tcphOut.SetSourcePort(c.srcport, pOut);
+      // tcphOut.SetDestPort(c.destport,pOut);
       SET_ACK(flags);
-      tcphOut.SetHeaderLen(5,pOut);
-      tcphOut.SetFlags(flags,pOut);
-      tcphOut.SetUrgentPtr(0,pOut);
-      pOut.PushBackHeader(tcphOut);
-    //start timeout
-      MinetSend(mux,pOut);
+      CLR_FIN(flags);
+    //   tcphOut.SetHeaderLen(5,pOut);
+    //   tcphOut.SetFlags(flags,pOut);
+    //   tcphOut.SetUrgentPtr(0,pOut);
+    //   pOut.PushBackHeader(tcphOut);
+    // //start timeout
+    //   MinetSend(mux,pOut);
+      sendEmptyPacket(mux,(*cs),flags);
+      (*cs).state.SetLastSent((*cs).state.GetLastAcked()+1);
     }
     }
     break;
@@ -493,6 +500,9 @@ int main(int argc, char *argv[])
     case LAST_ACK:
     cerr<<"In mux last_ack";
     if(IS_ACK(flags)){
+      tcph.GetSeqNum(n);
+      validSeq=(*cs).state.SetLastRecvd(n,len);
+      if(validSeq){
       tcph.GetAckNum(ackn);
       tcph.GetSeqNum(n);
       (*cs).state.SetState(CLOSED);
@@ -500,6 +510,7 @@ int main(int argc, char *argv[])
       (*cs).state.SetLastRecvd(n);
       (*cs).state.SetSendRwnd(w);
       (*cs).state.SetLastAcked(ackn);
+    }
     }
     break;
     //RCV: ACK
